@@ -1,0 +1,380 @@
+// entry/src/main/ets/pages/Index.ets
+import { picker }       from '@kit.CoreFileKit';
+import { promptAction } from '@kit.ArkUI';
+
+interface SelectOption { value: string }
+interface PhotoSelectOptions { maxSelectNumber: number }
+
+@Entry
+@Component
+struct VisaApp {
+  /* === 弹窗开关 === */
+  @State showDisclaimer: boolean = true;
+
+  /* === 原有全部状态 === */
+  @State name:       string  = '';
+  @State passport:   string  = '';
+  @State imageUri:   string  = '';
+  @State cityIndex:  number  = 0;
+  @State typeIndex:  number  = 0;
+  @State hasCrime:   boolean = false;
+  @State isChinese:  boolean = true;
+
+  @State assetValue:   string  = '';
+  @State hasTax:       boolean = false;
+  @State nationFileUri: string = '';
+  @State inviteFileUri: string = '';
+
+  @State departDate: Date   = new Date();
+  @State returnDate: Date   = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+  @State stayType:   string = '';
+
+  @State progress:   number  = 0;
+  @State inProgress: boolean = false;
+
+  @State showResult: boolean = false;
+  @State qrText:    string  = '';
+  @State isPass:    boolean = false;
+
+  @State showQuiz:     boolean = false;
+  @State travelCount:  number  = 0;
+  @State isEmployed:   boolean = false;
+  @State hasInvite:    boolean = false;
+
+  /* === 选项数据 === */
+  private readonly cities: string[] = ['成都崇州','成都武侯','北京海淀','广州越秀','香港九龙'];
+  private readonly types:  string[] = ['旅游','探亲','商务'];
+  private readonly cityOpt: SelectOption[] = this.cities.map(v => ({ value: v } as SelectOption));
+  private readonly typeOpt: SelectOption[] = this.types.map(v => ({ value: v } as SelectOption));
+  private readonly stayOptions: string[] = ['五年多次','一年多次','三年多次'];
+
+  /* === 核心逻辑 === */
+  private onSubmit(): void {
+    this.inProgress = true;
+    this.progress = 0;
+    let counter = 0;
+    const timer = setInterval(() => {
+      counter++;
+      const eased = 0.5 * (1 - Math.cos(Math.PI * counter / 60));
+      this.progress = eased * 100;
+      if (counter >= 60) {
+        clearInterval(timer);
+        this.inProgress = false;
+        if (this.hasCrime || !this.assetValue.trim()) {
+          this.isPass = false;
+          this.qrText = '';
+        } else {
+          this.isPass = Math.random() > 0.5;
+          this.qrText = this.isPass ? `V-${Date.now()}` : '';
+        }
+        this.stayType = this.isPass ? this.stayOptions[Math.floor(Math.random()*3)] : '';
+        this.showResult = true;
+      }
+    }, 30);
+  }
+
+  /* === 答题页 === */
+  @Builder
+  private QuizPage() {
+    Column({ space: 20 }) {
+      Text('补充信息').fontSize(24);
+
+      Column({ space: 8 }) {
+        TextInput({ placeholder: '资产状况(万元)', text: $$this.assetValue })
+          .type(InputType.Number)
+          .width('90%');
+        Row() {
+          Text('是否已纳税').fontSize(16).layoutWeight(1);
+          Toggle({ type: ToggleType.Switch, isOn: $$this.hasTax })
+            .onChange(v => this.hasTax = v);
+        }.width('90%');
+      }
+
+      Column({ space: 8 }) {
+        Text('出境记录：').fontSize(16).width('90%');
+        Row({ space: 12 }) {
+          ForEach(['首次','多次'], (v:string,i:number) => {
+            Button(v)
+              .type(ButtonType.Capsule)
+              .backgroundColor(this.travelCount === i+1 ? '#007AFF' : '#E5E5E5')
+              .fontColor(this.travelCount === i+1 ? '#FFFFFF' : '#000000')
+              .onClick(() => this.travelCount = i+1);
+          })
+        }.width('90%').justifyContent(FlexAlign.SpaceEvenly);
+      }
+
+      Column({ space: 12 }) {
+        Row() {
+          Text('是否在职/在学').fontSize(16).layoutWeight(1);
+          Toggle({ type: ToggleType.Switch, isOn: $$this.isEmployed })
+            .onChange(v => this.isEmployed = v);
+        }.width('90%');
+        Row() {
+          Text('是否有邀请函/担保函').fontSize(16).layoutWeight(1);
+          Toggle({ type: ToggleType.Switch, isOn: $$this.hasInvite })
+            .onChange(v => this.hasInvite = v);
+        }.width('90%');
+      }
+
+      /* 国籍文件上传（非中国籍） */
+      if (!this.isChinese) {
+        Button('上传国籍/居留证明')
+          .onClick(async () => {
+            const photoOpt: PhotoSelectOptions = { maxSelectNumber: 1 };
+            const res = await new picker.PhotoViewPicker().select(photoOpt);
+            if (res && res.photoUris && res.photoUris.length) this.nationFileUri = res.photoUris[0];
+          });
+        if (this.nationFileUri) Image(this.nationFileUri).width(100).height(100).borderRadius(8);
+      }
+
+      /* 邀请函文件上传（勾选有邀请函） */
+      if (this.hasInvite) {
+        Button('上传邀请函/担保函')
+          .onClick(async () => {
+            const photoOpt: PhotoSelectOptions = { maxSelectNumber: 1 };
+            const res = await new picker.PhotoViewPicker().select(photoOpt);
+            if (res && res.photoUris && res.photoUris.length) this.inviteFileUri = res.photoUris[0];
+          });
+        if (this.inviteFileUri) Image(this.inviteFileUri).width(100).height(100).borderRadius(8);
+      }
+
+      Row({ space: 20 }) {
+        Button('返回')
+          .width('40%')
+          .onClick(() => this.showQuiz = false);
+        Button('确认提交')
+          .width('40%')
+          .enabled(
+            this.assetValue.trim() !== '' &&
+              this.travelCount > 0 &&
+              (!this.isChinese ? this.nationFileUri !== '' : true) &&
+              (this.hasInvite ? this.inviteFileUri !== '' : true)
+          )
+          .onClick(() => {
+            promptAction.showDialog({
+              title: '请确认',
+              message: '请确定信息正确，提交后将无法修改。',
+              buttons: [
+                { text: '返回修改', color: '#666666' },
+                { text: '确认审核', color: '#007AFF' }
+              ]
+            }).then(r => {
+              if (r.index === 1) {
+                this.showQuiz = false;
+                this.onSubmit();
+              }
+            });
+          });
+      }.width('90%').justifyContent(FlexAlign.Center);
+    }
+    .padding(30)
+    .width('100%')
+    .height('100%');
+  }
+
+  /* === 额外选项卡 === */
+  @Builder
+  private ExtraTabs() {
+    Column({ space: 12 }) {
+      Row() {
+        Column({ space: 4 }) {
+          Row() {
+            Text('是否有犯罪记录').fontSize(16).layoutWeight(1);
+            Toggle({ type: ToggleType.Switch, isOn: $$this.hasCrime })
+              .onChange(v => this.hasCrime = v);
+          }.width('100%');
+          Text('如有犯罪记录，签证将被拒签')
+            .fontSize(12).fontColor('#FF3B30').width('100%');
+        }.width('100%');
+      }.width('100%');
+
+      Row() {
+        Column({ space: 4 }) {
+          Row() {
+            Text('是否拥有中国国籍').fontSize(16).layoutWeight(1);
+            Toggle({ type: ToggleType.Switch, isOn: $$this.isChinese })
+              .onChange(v => this.isChinese = v);
+          }.width('100%');
+          Text('非中国籍申请人需额外提供在华长期居留证明')
+            .fontSize(12).fontColor('#666666').width('100%');
+        }.width('100%');
+      }.width('100%');
+    }.width('90%').margin({ top: 10 });
+  }
+
+  /* === 表单页 === */
+  @Builder
+  private FormPage() {
+    Column({ space: 20 }) {
+      Text('签证模拟器').fontSize(24);
+
+      TextInput({ placeholder: '姓名', text: $$this.name })
+        .type(InputType.Normal)
+        .width('90%');
+
+      TextInput({ placeholder: '护照号码', text: $$this.passport })
+        .type(InputType.Normal)
+        .width('90%');
+
+      Column({ space: 4 }) {
+        Select(this.cityOpt)
+          .selected(this.cityIndex)
+          .onSelect(i => this.cityIndex = i);
+        Text('请选择就近的面签城市，不同城市受理时间略有差异')
+          .fontSize(12).fontColor('#666666').width('90%');
+      }.width('90%');
+
+      Column({ space: 4 }) {
+        Select(this.typeOpt)
+          .selected(this.typeIndex)
+          .onSelect(i => this.typeIndex = i);
+        Text('请按实际出行目的选择，类别错误会导致拒签')
+          .fontSize(12).fontColor('#666666').width('90%');
+      }.width('90%');
+
+      Button('上传照片')
+        .onClick(async () => {
+          const photoOpt: PhotoSelectOptions = { maxSelectNumber: 1 };
+          const res = await new picker.PhotoViewPicker().select(photoOpt);
+          if (res && res.photoUris && res.photoUris.length) this.imageUri = res.photoUris[0];
+        });
+      if (this.imageUri) Image(this.imageUri).width(100).height(100).borderRadius(8);
+
+      this.ExtraTabs();
+
+      if (this.inProgress) {
+        Column({ space: 8 }) {
+          Progress({ value: this.progress, total: 100, type: ProgressType.Linear })
+            .width('90%')
+            .style({ strokeWidth: 6 });
+          Text('正在审核中...').fontSize(14).fontColor('#007AFF');
+        }
+        .width('100%')
+        .margin({ top: 20 });
+      } else {
+        Button('下一步')
+          .enabled(this.name !== '' && this.passport !== '' && this.imageUri !== '')
+          .onClick(() => this.showQuiz = true);
+      }
+    }
+    .padding(30)
+    .width('100%')
+    .height('100%');
+  }
+
+  /* === 个人信息 + 签证结果页 === */
+  @Builder
+  private InfoPage() {
+    Column({ space: 12 }) {
+      Text('签证结果通知').fontSize(24).fontWeight(FontWeight.Bold);
+
+      Column({ space: 8 }) {
+        Row() { Text('姓名：').fontSize(16); Text(this.name).fontSize(16); }.width('100%');
+        Row() { Text('护照号码：').fontSize(16); Text(this.passport).fontSize(16); }.width('100%');
+        Row() { Text('面签地点：').fontSize(16); Text(this.cities[this.cityIndex]).fontSize(16); }.width('100%');
+        Row() { Text('签证类别：').fontSize(16); Text(this.types[this.typeIndex]).fontSize(16); }.width('100%');
+        Row() { Text('资产(万元)：').fontSize(16); Text(this.assetValue).fontSize(16); }.width('100%');
+        Row() { Text('已纳税：').fontSize(16); Text(this.hasTax ? '是' : '否').fontSize(16); }.width('100%');
+        Row() { Text('犯罪记录：').fontSize(16); Text(this.hasCrime ? '有' : '无').fontSize(16); }.width('100%');
+        Row() { Text('中国国籍：').fontSize(16); Text(this.isChinese ? '是' : '否').fontSize(16); }.width('100%');
+        Row() { Text('出发日期：').fontSize(16); Text(this.departDate.toLocaleDateString()).fontSize(16); }.width('100%');
+        Row() { Text('返程日期：').fontSize(16); Text(this.returnDate.toLocaleDateString()).fontSize(16); }.width('100%');
+        Row() { Text('可停留时长：').fontSize(16); Text(this.stayType).fontSize(16); }.width('100%');
+        if (this.qrText !== '') {
+          Row() { Text('签证识别码：').fontSize(16); Text(this.qrText).fontSize(16); }.width('100%');
+        }
+      }
+      .alignItems(HorizontalAlign.Start)
+      .padding(12)
+      .backgroundColor('#F5F5F5')
+      .borderRadius(16)
+      .width('90%');
+
+      if (this.isPass) {
+        Text('签证已批准').fontSize(18).fontColor('#00C853');
+      } else {
+        Text('签证被拒签').fontSize(18).fontColor('#FF3B30');
+        if (this.hasCrime) {
+          Text('因存在犯罪记录，本次申请被拒。')
+            .fontSize(16)
+            .fontColor('#FF3B30')
+            .margin({ top: 10 });
+        } else if (!this.assetValue.trim()) {
+          Text('因无资产，本次申请被拒。')
+            .fontSize(16)
+            .fontColor('#FF3B30')
+            .margin({ top: 10 });
+        }
+      }
+
+      Button('返回重新申请')
+        .onClick(() => {
+          this.showResult = false;
+          this.qrText = '';
+          this.showQuiz = false;
+          this.assetValue = '';
+          this.hasTax = false;
+          this.nationFileUri = '';
+          this.inviteFileUri = '';
+          this.travelCount = 0;
+          this.isEmployed = false;
+          this.hasInvite = false;
+        });
+    }
+    .padding(30)
+    .width('100%')
+    .height('100%')
+    .justifyContent(FlexAlign.Center);
+  }
+
+  build() {
+    Stack() {
+      if (this.showDisclaimer) {
+        Column({ space: 12 }) {
+          Scroll() {
+            Column({ space: 12 }) {
+              Text('模拟签证助手隐私条款').fontSize(20).fontWeight(FontWeight.Bold);
+              Text('生效日期：2025 年 08 月 01 日\n\n' +
+                '引言\n欢迎使用模拟签证助手！本应用由 [first工作室成员陈霖修] 负责运营，是一款仅供娱乐的工具类应用。本应用不连接网络，也不涉及任何服务器交互，且不会收集您的任何个人信息。我们将严格遵守相关法律法规，保障您的信息安全。请您在使用本应用前仔细阅读本隐私条款，若有疑问，可通过官方渠道联系我们。\n\n' +
+                '一、信息收集说明\n本应用为离线运行的娱乐类工具，不会以任何形式收集您的个人信息，包括但不限于姓名、身份证号、手机号码、地址、设备信息、位置信息、使用记录等。由于应用不连接网络，也不存在服务器存储相关数据的情况，您在使用过程中产生的所有操作数据仅会临时存储在您的本地设备中，且这些数据不会被上传、共享或披露给任何第三方。\n\n' +
+                '二、数据存储与处理\n存储地点：您在使用本应用过程中产生的临时数据，仅存储于您的本地设备，不会传输至任何外部服务器或其他设备。\n存储期限：临时数据的存储期限完全由您的设备存储空间和您的操作决定，您可通过清理设备缓存或卸载应用的方式，随时清除这些数据。\n数据处理：因本应用不收集任何个人信息，故不存在对个人信息的使用、共享、转让、公开披露等行为。\n\n' +
+                '三、您的权利\n由于本应用不涉及个人信息的收集和存储，您无需担心个人信息的泄露或滥用。您有权随时：\n• 卸载本应用，彻底清除本地临时数据；\n• 对应用的功能和使用体验提出建议或反馈。\n\n' +
+                '四、未成年人保护\n本应用作为娱乐工具，未成年人可在监护人的陪同下使用。因应用不收集任何信息，故不存在未成年人个人信息泄露的风险。若监护人发现应用存在任何不符合未成年人保护原则的内容，可联系我们进行处理。\n\n' +
+                '五、隐私条款的更新\n本隐私条款可能会根据软件功能调整、用户体验优化等对本隐私条款进行变更。变更后的隐私条款会在应用内显著位置公布，公布后即生效。若您在隐私条款变更后继续使用本应用，视为您同意变更后的内容。\n\n' +
+                '六、联系我们\n如果您对本隐私条款或应用使用有任何疑问、建议，可通过以下方式联系我们：\n联系邮箱：[2781881898@qq.com]\n我们将在收到您的反馈后，尽快为您解答或处理相关问题。')
+                .fontSize(14)
+                .width('90%')
+                .lineHeight(20);
+            }
+            .padding(20);
+          }
+          .height('60%')
+          .width('90%');
+
+          Button('我已阅读并同意')
+            .margin({ top: 20 })
+            .onClick(() => this.showDisclaimer = false);
+        }
+        .width('100%')
+        .height('100%')
+        .backgroundColor('#00000099')
+        .justifyContent(FlexAlign.Center)
+        .alignItems(HorizontalAlign.Center)
+        .onClick(() => {});
+      } else if (this.showResult) {
+        this.InfoPage();
+      } else if (this.showQuiz) {
+        this.QuizPage();
+      } else {
+        this.FormPage();
+      }
+
+      Text('制作者：陈霖修linsion')
+        .fontSize(12)
+        .fontColor('#666666')
+        .position({ left: 12, bottom: 12 });
+    }
+    .width('100%')
+    .height('100%');
+  }
+}
